@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Read per-request credentials directly off the HTTP request instead of routing
+  through FastMCP's `get_http_headers()`, which strips the `authorization`
+  header (and could strip the `X-Mealie-Token` credential). Whitespace-only
+  Mealie tokens are now treated as missing. Added an end-to-end HTTP test that
+  exercises the real auth gate and asserts the Mealie token is forwarded to
+  Mealie rather than dropped.
+
 ### Added
 - Write tools (registered only when `MEALIE_READONLY=false`): `create_recipe_from_url`,
   `create_recipe`, `update_recipe`, `delete_recipe`, `mark_recipe_made`,
