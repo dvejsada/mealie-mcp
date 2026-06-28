@@ -9,6 +9,8 @@ bearer token; the Mealie credential itself is provided per request (see
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import logging
 from collections.abc import AsyncIterator
 
 import httpx
@@ -16,9 +18,12 @@ from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from . import client, tools
 from .config import MEALIE_TOKEN_HEADER, Settings
+
+logger = logging.getLogger("mealie_mcp.auth")
 
 INSTRUCTIONS = f"""\
 Read-only access to a Mealie recipe and meal-planning instance.
@@ -78,9 +83,107 @@ def build_server(settings: Settings) -> FastMCP:
     return mcp
 
 
+def _token_fingerprint(token: str) -> str:
+    """A short, non-reversible fingerprint of a token, safe to log."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:8]
+
+
+def _describe_authorization(scope: Scope, token_fingerprints: set[str]) -> str:
+    """Summarise a request's Authorization header without revealing the token."""
+    headers = {k.lower(): v for k, v in scope.get("headers") or []}
+    raw = headers.get(b"authorization")
+    if raw is None:
+        return "absent (no Authorization header reached the server)"
+    # ASGI header values are byte strings; latin-1 round-trips any byte and never
+    # raises, which is all we need to read the scheme and the token's length.
+    scheme, _, value = raw.decode("latin-1").partition(" ")
+    value = value.strip()
+    if not value:
+        return f"scheme={scheme or '<none>'} <empty token>"
+    fp = _token_fingerprint(value)
+    matched = fp in token_fingerprints
+    return (
+        f"scheme={scheme or '<none>'} token_len={len(value)} "
+        f"fp={fp} matches_configured={matched}"
+    )
+
+
+class _AuthDebugMiddleware:
+    """Outermost ASGI wrapper that logs what the auth gate receives.
+
+    Installed only when ``MCP_AUTH_DEBUG`` is set. It sits *outside* FastMCP's
+    auth middleware, so it also sees requests the gate rejects with 401 — the
+    whole point when troubleshooting. Tokens are never logged: only their length
+    and a short SHA-256 fingerprint, which the operator can compare against the
+    configured tokens' fingerprints (logged once at startup) to tell a value
+    mismatch apart from a header that a proxy stripped before it arrived.
+    """
+
+    def __init__(self, app: ASGIApp, token_fingerprints: set[str]) -> None:
+        self.app = app
+        self.token_fingerprints = token_fingerprints
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        authorization = _describe_authorization(scope, self.token_fingerprints)
+        status: dict[str, int] = {}
+
+        async def _send(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                status["code"] = message["status"]
+            await send(message)
+
+        await self.app(scope, receive, _send)
+        logger.info(
+            "auth-debug: %s %s authorization=%s -> %s",
+            scope.get("method", "?"),
+            scope.get("path", "?"),
+            authorization,
+            status.get("code", "?"),
+        )
+
+
+def _configure_debug_logging() -> None:
+    """Ensure auth-debug lines are emitted regardless of uvicorn's log config."""
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(message)s"))
+        logger.addHandler(handler)
+        logger.propagate = False
+
+
 def main() -> None:
     settings = Settings.from_env()
     mcp = build_server(settings)
+
+    if settings.auth_debug:
+        # Wrap the app in our own outermost ASGI layer so we can log what the
+        # auth gate receives (FastMCP's auth middleware is opaque on 401). This
+        # means serving via uvicorn directly instead of mcp.run().
+        import uvicorn
+
+        _configure_debug_logging()
+        fingerprints = {_token_fingerprint(t) for t in settings.auth_tokens}
+        logger.info(
+            "auth-debug enabled: accepting %d token(s) with fingerprints %s",
+            len(fingerprints),
+            sorted(fingerprints),
+        )
+        app = _AuthDebugMiddleware(
+            mcp.http_app(path=settings.path), token_fingerprints=fingerprints
+        )
+        uvicorn.run(
+            app,
+            host=settings.host,
+            port=settings.port,
+            log_level=settings.log_level,
+        )
+        return
+
     mcp.run(
         transport="http",
         host=settings.host,

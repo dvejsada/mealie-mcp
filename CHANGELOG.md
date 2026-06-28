@@ -17,6 +17,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   token is forwarded to Mealie rather than dropped.
 
 ### Added
+- `MCP_AUTH_DEBUG` flag: when enabled, logs a masked diagnostic for every request
+  reaching the auth gate (Authorization present/absent, scheme, token length and a
+  SHA-256 fingerprint vs. the configured tokens) to troubleshoot `401`s without
+  ever logging the token. Includes a "Troubleshooting `401`" section in the README.
 - Write tools (registered only when `MEALIE_READONLY=false`): `create_recipe_from_url`,
   `create_recipe`, `update_recipe`, `delete_recipe`, `mark_recipe_made`,
   `add_shopping_item`, `set_shopping_item_checked`, `add_recipe_to_shopping_list`,

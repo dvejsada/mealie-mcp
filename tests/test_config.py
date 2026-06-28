@@ -44,6 +44,13 @@ def test_from_env_parses_values(monkeypatch):
     assert settings.mealie_base_url == "https://mealie.example.com"  # trailing slash stripped
     assert settings.read_only is False
     assert settings.port == 9000
+    assert settings.auth_debug is False  # default when MCP_AUTH_DEBUG unset
+
+
+def test_from_env_parses_auth_debug(monkeypatch):
+    monkeypatch.setenv("MCP_AUTH_TOKEN", "tok")
+    monkeypatch.setenv("MCP_AUTH_DEBUG", "true")
+    assert Settings.from_env().auth_debug is True
 
 
 def test_from_env_defaults_to_read_only(monkeypatch):
