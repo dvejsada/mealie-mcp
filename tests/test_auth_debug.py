@@ -11,9 +11,11 @@ import logging
 
 from mealie_mcp.server import (
     _AuthDebugMiddleware,
+    _configure_debug_logging,
     _describe_authorization,
     _token_fingerprint,
 )
+from mealie_mcp.server import logger as auth_logger
 
 
 def _scope(headers: dict[str, str]) -> dict:
@@ -97,3 +99,21 @@ async def test_middleware_passes_through_non_http_scopes():
     middleware = _AuthDebugMiddleware(inner, token_fingerprints=set())
     await middleware({"type": "lifespan"}, receive, send)
     assert seen == ["lifespan"]
+
+
+def test_configure_debug_logging_is_idempotent():
+    # Save and restore global logger state so this never leaks into other tests.
+    saved_handlers = list(auth_logger.handlers)
+    saved_level = auth_logger.level
+    saved_propagate = auth_logger.propagate
+    auth_logger.handlers.clear()
+    try:
+        _configure_debug_logging()
+        _configure_debug_logging()  # second call must not add a second handler
+        assert auth_logger.level == logging.INFO
+        assert len(auth_logger.handlers) == 1
+        assert auth_logger.propagate is False
+    finally:
+        auth_logger.handlers[:] = saved_handlers
+        auth_logger.setLevel(saved_level)
+        auth_logger.propagate = saved_propagate

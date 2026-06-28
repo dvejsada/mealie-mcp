@@ -94,11 +94,9 @@ def _describe_authorization(scope: Scope, token_fingerprints: set[str]) -> str:
     raw = headers.get(b"authorization")
     if raw is None:
         return "absent (no Authorization header reached the server)"
-    try:
-        text = raw.decode("latin-1")
-    except Exception:
-        return "<undecodable>"
-    scheme, _, value = text.partition(" ")
+    # ASGI header values are byte strings; latin-1 round-trips any byte and never
+    # raises, which is all we need to read the scheme and the token's length.
+    scheme, _, value = raw.decode("latin-1").partition(" ")
     value = value.strip()
     if not value:
         return f"scheme={scheme or '<none>'} <empty token>"
