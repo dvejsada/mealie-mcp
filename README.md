@@ -1,10 +1,11 @@
 # mealie-mcp
 
-A read-only [Model Context Protocol](https://modelcontextprotocol.io) server for
+A [Model Context Protocol](https://modelcontextprotocol.io) server for
 [Mealie](https://mealie.io), built with [FastMCP](https://gofastmcp.com) and served
 over the **Streamable HTTP** transport. Ships as a Docker container.
 
-It exposes **tools only** — no MCP resources or prompts.
+It exposes **tools only** — no MCP resources or prompts. It is **read-only by
+default**; write tools can be enabled with `MEALIE_READONLY=false`.
 
 ## How auth works
 
@@ -23,12 +24,21 @@ Get a Mealie API token from your Mealie profile: **Profile → Manage API Tokens
 
 ## Tools
 
-All tools are read-only.
+### Read tools (always available)
 
 **Recipes** — `search_recipes`, `get_recipe`, `get_recipe_suggestions`
 **Reference data** — `list_categories`, `list_tags`, `list_tools`, `list_foods`, `list_units`, `list_cookbooks`
 **Household** — `get_shopping_lists`, `get_shopping_list`, `get_meal_plan`, `get_todays_meals`
 **Instance** — `get_current_user`, `get_app_info`
+
+### Write tools (only when `MEALIE_READONLY=false`)
+
+**Recipes** — `create_recipe_from_url`, `create_recipe`, `update_recipe`, `delete_recipe`, `mark_recipe_made`
+**Shopping** — `add_shopping_item`, `set_shopping_item_checked`, `add_recipe_to_shopping_list`
+**Meal plans** — `create_mealplan_entry`, `delete_mealplan_entry`
+
+> Write tools respect the per-request Mealie token's own permissions, so a
+> read-only Mealie token can never mutate data even when write tools are enabled.
 
 ## Run with Docker
 
@@ -82,6 +92,7 @@ async with Client(transport) as client:
 | --- | --- | --- | --- |
 | `MCP_AUTH_TOKEN` | **yes** | — | Comma-separated secret bearer token(s) for the MCP endpoint. |
 | `MEALIE_BASE_URL` | no¹ | — | Default Mealie base URL (e.g. `https://mealie.example.com`). |
+| `MEALIE_READONLY` | no | `true` | Set `false` to also register write tools. |
 | `MEALIE_TIMEOUT` | no | `30` | Outbound request timeout in seconds. |
 | `MEALIE_VERIFY_SSL` | no | `true` | Set `false` for self-signed Mealie certs. |
 | `MCP_HOST` | no | `0.0.0.0` | Bind address. |
@@ -106,8 +117,9 @@ docker run -d -p 8000:8000 \
 
 ## CI/CD
 
-Two GitHub Actions workflows are included (`.github/workflows/`):
+Three GitHub Actions workflows are included (`.github/workflows/`):
 
+- **`ci.yml`** — runs `ruff`, `pyright`, and `pytest` on every push/PR (Python 3.11–3.13).
 - **`docker-publish.yml`** — builds and pushes the multi-arch image to Docker Hub
   when a GitHub Release is published (tags `X.Y.Z`, `X.Y`, `X`, and `latest`).
 - **`claude.yml`** — runs [Claude Code](https://github.com/anthropics/claude-code-action)
@@ -126,3 +138,15 @@ To cut a release (which triggers the image build):
 ```bash
 gh release create v0.1.0 --generate-notes
 ```
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+ruff check .     # lint
+pyright          # type check
+pytest -q        # tests
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details. Changes are tracked in
+[CHANGELOG.md](CHANGELOG.md). Licensed under [MIT](LICENSE).

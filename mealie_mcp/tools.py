@@ -1,19 +1,28 @@
-"""Read-only MCP tools exposing a Mealie instance.
+"""MCP tools exposing a Mealie instance.
 
-Every tool maps to a single GET endpoint of the Mealie REST API. Snake_case
-arguments are translated to Mealie's camelCase query parameters. Recipe search
-results are trimmed to the fields most useful to an assistant; ``get_recipe``
-returns the full recipe so callers can fetch detail on demand.
+Read tools are always available; write tools are registered only when the server
+runs with writes enabled (see ``register``). Each tool maps to a single Mealie
+REST endpoint, translating snake_case arguments to Mealie's camelCase query/body
+fields. Recipe search results are trimmed to the fields most useful to an
+assistant; ``get_recipe`` returns the full recipe so callers can fetch detail on
+demand.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 from pydantic import Field
 
-from .client import mealie_get
+from .client import (
+    mealie_delete,
+    mealie_get,
+    mealie_patch,
+    mealie_post,
+    mealie_put,
+)
 
 # Reusable annotated argument types ------------------------------------------------
 
@@ -54,8 +63,12 @@ def _paginated(data: dict[str, Any], items: list[Any] | None = None) -> dict[str
     }
 
 
-def register(mcp: FastMCP) -> None:
-    """Register all read-only tools on the given FastMCP server."""
+def register(mcp: FastMCP, include_writes: bool = False) -> None:
+    """Register tools on the given FastMCP server.
+
+    Read tools are always registered. Write tools (create/update/delete) are
+    registered only when ``include_writes`` is True.
+    """
 
     # --- Recipes ---------------------------------------------------------------
 
@@ -271,3 +284,160 @@ def register(mcp: FastMCP) -> None:
     async def get_app_info() -> dict[str, Any]:
         """Get general information about the Mealie instance (version, settings)."""
         return await mealie_get("/api/app/about")
+
+    if not include_writes:
+        return
+
+    # === Write tools (registered only when MEALIE_READONLY=false) =============
+    # The per-request Mealie token's own permissions are still enforced by Mealie,
+    # so a read-only token cannot mutate data even with these tools registered.
+
+    # --- Recipes ---------------------------------------------------------------
+
+    @mcp.tool
+    async def create_recipe_from_url(
+        url: Annotated[str, Field(description="Web page URL to scrape into a recipe.")],
+        include_tags: bool = True,
+        include_categories: bool = False,
+    ) -> str:
+        """Scrape a recipe from a web page URL and import it into Mealie.
+        Returns the slug of the newly created recipe."""
+        return await mealie_post(
+            "/api/recipes/create/url",
+            json={
+                "url": url,
+                "includeTags": include_tags,
+                "includeCategories": include_categories,
+            },
+        )
+
+    @mcp.tool
+    async def create_recipe(
+        name: Annotated[str, Field(description="Name/title of the new recipe.")],
+    ) -> str:
+        """Create a new (empty) recipe with the given name. Returns its slug;
+        use update_recipe to fill in ingredients, instructions, etc."""
+        return await mealie_post("/api/recipes", json={"name": name})
+
+    @mcp.tool
+    async def update_recipe(
+        slug: Annotated[str, Field(description="Slug of the recipe to update.")],
+        updates: Annotated[
+            dict[str, Any],
+            Field(
+                description=(
+                    "Fields to change (partial). Common keys: name, description, "
+                    "recipeYield, recipeServings, totalTime, prepTime, performTime, "
+                    "recipeIngredient (list), recipeInstructions (list of {text}), "
+                    "recipeCategory (list), tags (list), rating, notes."
+                )
+            ),
+        ],
+    ) -> dict[str, Any]:
+        """Partially update a recipe. Only the supplied fields are changed."""
+        return await mealie_patch(f"/api/recipes/{slug}", json=updates)
+
+    @mcp.tool
+    async def delete_recipe(
+        slug: Annotated[str, Field(description="Slug of the recipe to delete.")],
+    ) -> dict[str, Any]:
+        """Permanently delete a recipe. Returns the deleted recipe."""
+        return await mealie_delete(f"/api/recipes/{slug}")
+
+    @mcp.tool
+    async def mark_recipe_made(
+        slug: Annotated[str, Field(description="Slug of the recipe.")],
+        timestamp: Annotated[
+            str | None,
+            Field(description="ISO 8601 datetime; defaults to now (UTC)."),
+        ] = None,
+    ) -> dict[str, Any]:
+        """Record that a recipe was made, updating its 'last made' date."""
+        ts = timestamp or datetime.now(UTC).isoformat()
+        return await mealie_patch(f"/api/recipes/{slug}/last-made", json={"timestamp": ts})
+
+    # --- Shopping lists --------------------------------------------------------
+
+    @mcp.tool
+    async def add_shopping_item(
+        shopping_list_id: Annotated[str, Field(description="Target shopping list ID (UUID).")],
+        note: Annotated[str, Field(description="Free-text item, e.g. '2 cans of beans'.")],
+        quantity: Annotated[float, Field(ge=0, description="Quantity.")] = 1,
+        food_id: Annotated[str | None, Field(description="Optional food ID (UUID).")] = None,
+        unit_id: Annotated[str | None, Field(description="Optional unit ID (UUID).")] = None,
+        label_id: Annotated[str | None, Field(description="Optional label ID (UUID).")] = None,
+    ) -> dict[str, Any]:
+        """Add an item to a shopping list."""
+        return await mealie_post(
+            "/api/households/shopping/items",
+            json={
+                "shoppingListId": shopping_list_id,
+                "note": note,
+                "quantity": quantity,
+                "foodId": food_id,
+                "unitId": unit_id,
+                "labelId": label_id,
+                "isFood": food_id is not None,
+                "checked": False,
+            },
+        )
+
+    @mcp.tool
+    async def set_shopping_item_checked(
+        item_id: Annotated[str, Field(description="Shopping list item ID (UUID).")],
+        checked: Annotated[bool, Field(description="True to check off, False to uncheck.")] = True,
+    ) -> dict[str, Any]:
+        """Check or uncheck a shopping list item."""
+        item = await mealie_get(f"/api/households/shopping/items/{item_id}")
+        item["checked"] = checked
+        return await mealie_put(f"/api/households/shopping/items/{item_id}", json=item)
+
+    @mcp.tool
+    async def add_recipe_to_shopping_list(
+        shopping_list_id: Annotated[str, Field(description="Target shopping list ID (UUID).")],
+        recipe_id: Annotated[str, Field(description="Recipe ID (UUID) to add ingredients from.")],
+        scale: Annotated[
+            float, Field(gt=0, description="Recipe quantity multiplier.")
+        ] = 1,
+    ) -> dict[str, Any]:
+        """Add all of a recipe's ingredients to a shopping list."""
+        return await mealie_post(
+            f"/api/households/shopping/lists/{shopping_list_id}/recipe/{recipe_id}",
+            json={"recipeIncrementQuantity": scale},
+        )
+
+    # --- Meal plans ------------------------------------------------------------
+
+    @mcp.tool
+    async def create_mealplan_entry(
+        date: Annotated[str, Field(description="Date for the meal, format YYYY-MM-DD.")],
+        entry_type: Annotated[
+            Literal["breakfast", "lunch", "dinner", "side", "snack", "drink", "dessert"],
+            Field(description="Meal slot."),
+        ] = "dinner",
+        recipe_id: Annotated[
+            str | None, Field(description="Recipe ID (UUID) to plan; omit for a free-text entry.")
+        ] = None,
+        title: Annotated[
+            str | None, Field(description="Title for a free-text (no-recipe) entry.")
+        ] = None,
+        text: Annotated[str | None, Field(description="Optional note for the entry.")] = None,
+    ) -> dict[str, Any]:
+        """Add an entry to the meal plan for a given date."""
+        return await mealie_post(
+            "/api/households/mealplans",
+            json={
+                "date": date,
+                "entryType": entry_type,
+                "recipeId": recipe_id,
+                "title": title or "",
+                "text": text or "",
+            },
+        )
+
+    @mcp.tool
+    async def delete_mealplan_entry(
+        entry_id: Annotated[str, Field(description="Meal plan entry ID.")],
+    ) -> dict[str, Any]:
+        """Delete a meal plan entry. Returns the deleted entry."""
+        return await mealie_delete(f"/api/households/mealplans/{entry_id}")

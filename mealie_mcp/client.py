@@ -51,7 +51,9 @@ def _resolve_request() -> tuple[str, str]:
     try:
         request = get_http_request()
     except Exception:  # pragma: no cover - only happens outside an HTTP context
-        raise ToolError("No active HTTP request; this server requires HTTP transport.")
+        raise ToolError(
+            "No active HTTP request; this server requires HTTP transport."
+        ) from None
 
     token = request.headers.get(MEALIE_TOKEN_HEADER)
     if not token:
@@ -99,8 +101,14 @@ def _error_detail(response: httpx.Response) -> str:
     return str(body)
 
 
-async def mealie_get(path: str, params: dict[str, Any] | None = None) -> Any:
-    """Perform an authenticated GET against the Mealie API and return parsed JSON.
+async def mealie_request(
+    method: str,
+    path: str,
+    *,
+    params: dict[str, Any] | None = None,
+    json: Any = None,
+) -> Any:
+    """Perform an authenticated request against the Mealie API and return JSON.
 
     ``path`` must start with ``/`` (e.g. ``/api/recipes``). Errors are converted
     into ToolError so the MCP client receives a clear, structured message.
@@ -111,7 +119,9 @@ async def mealie_get(path: str, params: dict[str, Any] | None = None) -> Any:
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     try:
-        response = await client.get(url, params=_clean_params(params), headers=headers)
+        response = await client.request(
+            method, url, params=_clean_params(params), json=json, headers=headers
+        )
     except httpx.RequestError as exc:
         raise ToolError(f"Could not reach Mealie at {url}: {exc}") from exc
 
@@ -124,14 +134,36 @@ async def mealie_get(path: str, params: dict[str, Any] | None = None) -> Any:
         raise ToolError("Mealie denied access to this resource (403 Forbidden).")
     if response.status_code == 404:
         raise ToolError(f"Mealie resource not found (404): {path}")
+    if response.status_code == 422:
+        raise ToolError(f"Mealie rejected the request (422): {_error_detail(response)}")
     if response.is_error:
         raise ToolError(
             f"Mealie API error {response.status_code} for {path}: {_error_detail(response)}"
         )
 
-    if not response.content:
+    if response.status_code == 204 or not response.content:
         return None
     try:
         return response.json()
     except ValueError as exc:
         raise ToolError(f"Mealie returned a non-JSON response for {path}.") from exc
+
+
+async def mealie_get(path: str, params: dict[str, Any] | None = None) -> Any:
+    return await mealie_request("GET", path, params=params)
+
+
+async def mealie_post(path: str, json: Any = None, params: dict[str, Any] | None = None) -> Any:
+    return await mealie_request("POST", path, json=json, params=params)
+
+
+async def mealie_put(path: str, json: Any = None) -> Any:
+    return await mealie_request("PUT", path, json=json)
+
+
+async def mealie_patch(path: str, json: Any = None) -> Any:
+    return await mealie_request("PATCH", path, json=json)
+
+
+async def mealie_delete(path: str) -> Any:
+    return await mealie_request("DELETE", path)

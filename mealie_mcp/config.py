@@ -53,10 +53,16 @@ class Settings:
     request_timeout: float = 30.0
     verify_ssl: bool = True
 
+    # When True (default) only read tools are registered. Set MEALIE_READONLY=false
+    # to also expose write tools (create/update/delete). Note that the per-request
+    # Mealie token's own permissions still apply, so a read-only Mealie token can
+    # never mutate data regardless of this flag.
+    read_only: bool = True
+
     log_level: str = "info"
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         tokens = _split_tokens(os.getenv("MCP_AUTH_TOKEN"))
         if not tokens:
             raise RuntimeError(
@@ -77,5 +83,6 @@ class Settings:
             path=os.getenv("MCP_PATH", "/mcp"),
             request_timeout=float(os.getenv("MEALIE_TIMEOUT", "30")),
             verify_ssl=_env_bool("MEALIE_VERIFY_SSL", True),
+            read_only=_env_bool("MEALIE_READONLY", True),
             log_level=os.getenv("MCP_LOG_LEVEL", "info"),
         )

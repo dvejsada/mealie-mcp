@@ -5,6 +5,12 @@ __pycache__/
 .env
 .git/
 .gitignore
+.gitattributes
+.github/
 README.md
+CHANGELOG.md
+CONTRIBUTING.md
 docker-compose.yml
 tests/
+.ruff_cache/
+.pytest_cache/

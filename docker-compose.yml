@@ -16,6 +16,7 @@ services:
       MEALIE_BASE_URL: ${MEALIE_BASE_URL:-}
 
       # Optional tuning.
+      MEALIE_READONLY: ${MEALIE_READONLY:-true}
       MEALIE_TIMEOUT: ${MEALIE_TIMEOUT:-30}
       MEALIE_VERIFY_SSL: ${MEALIE_VERIFY_SSL:-true}
       MCP_PATH: ${MCP_PATH:-/mcp}

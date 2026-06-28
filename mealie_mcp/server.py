@@ -20,18 +20,19 @@ from starlette.responses import JSONResponse
 from . import client, tools
 from .config import MEALIE_TOKEN_HEADER, Settings
 
-INSTRUCTIONS = """\
+INSTRUCTIONS = f"""\
 Read-only access to a Mealie recipe and meal-planning instance.
 
 Authentication: every request must include two things —
   1. 'Authorization: Bearer <MCP token>' to reach this server, and
-  2. '{token_header}: <your Mealie API token>' so the server can act as you in Mealie.
+  2. '{MEALIE_TOKEN_HEADER}: <your Mealie API token>' so the server can act as you in Mealie.
 
 Use search_recipes to find recipes and get_recipe for full detail. Reference
 data (categories, tags, tools, foods, units) and household data (shopping lists,
-meal plans, cookbooks) are exposed through their own tools. Nothing here mutates
-data — all tools are read-only.
-""".format(token_header=MEALIE_TOKEN_HEADER)
+meal plans, cookbooks) are exposed through their own tools. Write tools
+(create/update/delete) are available only when the server runs with writes
+enabled; the Mealie token's own permissions are always enforced as well.
+"""
 
 
 def build_server(settings: Settings) -> FastMCP:
@@ -66,7 +67,7 @@ def build_server(settings: Settings) -> FastMCP:
         lifespan=lifespan,
     )
 
-    tools.register(mcp)
+    tools.register(mcp, include_writes=not settings.read_only)
 
     # Unauthenticated liveness probe for Docker / reverse proxies. Custom routes
     # are not behind the MCP auth gate, so this stays reachable without a token.
