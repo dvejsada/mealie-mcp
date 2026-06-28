@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_http_request
+from starlette.datastructures import Headers
 
 from .config import MEALIE_TOKEN_HEADER, MEALIE_URL_HEADER, Settings
 
@@ -43,10 +44,17 @@ def _require_client() -> httpx.AsyncClient:
     return _http_client
 
 
-def _resolve_request() -> tuple[str, str]:
-    """Return ``(base_url, mealie_token)`` for the current request.
+def _request_headers() -> Headers:
+    """Return the raw headers of the active HTTP request.
 
-    Raises ToolError with an actionable message if either is missing.
+    Credentials are read straight off the Starlette request via
+    ``get_http_request()`` — deliberately *not* via FastMCP's
+    ``get_http_headers()`` helper. ``get_http_headers()`` strips a fixed set of
+    "problematic" headers (``authorization`` among them) before returning, so
+    routing credential lookups through it would silently drop the per-request
+    Mealie token carried in ``X-Mealie-Token`` as well as the endpoint's own
+    ``Authorization`` gate. Reading the request object directly keeps every
+    header intact.
     """
     try:
         request = get_http_request()
@@ -54,15 +62,24 @@ def _resolve_request() -> tuple[str, str]:
         raise ToolError(
             "No active HTTP request; this server requires HTTP transport."
         ) from None
+    return request.headers
 
-    token = request.headers.get(MEALIE_TOKEN_HEADER)
+
+def _resolve_request() -> tuple[str, str]:
+    """Return ``(base_url, mealie_token)`` for the current request.
+
+    Raises ToolError with an actionable message if either is missing.
+    """
+    headers = _request_headers()
+
+    token = (headers.get(MEALIE_TOKEN_HEADER) or "").strip()
     if not token:
         raise ToolError(
             f"Missing Mealie credential: send your Mealie API token in the "
             f"'{MEALIE_TOKEN_HEADER}' header."
         )
 
-    base_url = request.headers.get(MEALIE_URL_HEADER)
+    base_url = (headers.get(MEALIE_URL_HEADER) or "").strip()
     if base_url:
         base_url = base_url.rstrip("/")
     elif _settings and _settings.mealie_base_url:
