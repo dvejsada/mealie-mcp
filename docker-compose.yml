@@ -1,0 +1,28 @@
+services:
+  mealie-mcp:
+    build: .
+    image: mealie-mcp:latest
+    container_name: mealie-mcp
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # REQUIRED: comma-separated secret bearer token(s) that MCP clients must
+      # present as 'Authorization: Bearer <token>' to reach this server.
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?set MCP_AUTH_TOKEN in your .env}
+
+      # Default Mealie instance. Clients may override per request with the
+      # 'X-Mealie-Url' header; if so, this can be omitted.
+      MEALIE_BASE_URL: ${MEALIE_BASE_URL:-}
+
+      # Optional tuning.
+      MEALIE_TIMEOUT: ${MEALIE_TIMEOUT:-30}
+      MEALIE_VERIFY_SSL: ${MEALIE_VERIFY_SSL:-true}
+      MCP_PATH: ${MCP_PATH:-/mcp}
+      MCP_LOG_LEVEL: ${MCP_LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
