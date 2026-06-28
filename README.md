@@ -106,8 +106,40 @@ every LibreChat user acts as their own Mealie account.
 | `MCP_PORT` | no | `8000` | Bind port. |
 | `MCP_PATH` | no | `/mcp` | Endpoint path. |
 | `MCP_LOG_LEVEL` | no | `info` | uvicorn log level. |
+| `MCP_AUTH_DEBUG` | no | `false` | Log a masked diagnostic for each request hitting the auth gate (to troubleshoot `401`s). See [Troubleshooting](#troubleshooting-401-unauthorized). |
 
 ¹ Required unless every client sends the `X-Mealie-Url` header.
+
+## Troubleshooting `401 Unauthorized`
+
+A `401` means the **endpoint token** (the `Authorization: Bearer <token>` gate,
+*not* your Mealie token) was missing or didn't match `MCP_AUTH_TOKEN`. Many MCP
+clients react to a `401` by probing for OAuth (`GET /.well-known/oauth-*`, which
+this server returns `404` for, since it uses static tokens, not OAuth) — those
+`404`s are a symptom of the `401`, not a separate problem.
+
+To see exactly what the gate receives, set `MCP_AUTH_DEBUG=true` and reconnect.
+Each request to the gate is logged with a **masked** summary (the token itself
+is never logged — only its length and a SHA-256 fingerprint):
+
+```
+auth-debug enabled: accepting 1 token(s) with fingerprints ['0c45a1f1']
+auth-debug: POST /mcp authorization=scheme=Bearer token_len=10 fp=0c45a1f1 matches_configured=True -> 200
+auth-debug: POST /mcp authorization=scheme=Bearer token_len=5 fp=02b60b3b matches_configured=False -> 401
+auth-debug: POST /mcp authorization=absent (no Authorization header reached the server) -> 401
+auth-debug: POST /mcp authorization=scheme=Bearer <empty token> -> 401
+```
+
+Read it as:
+
+- **`matches_configured=False`** — the client sent a token, but it doesn't equal
+  any `MCP_AUTH_TOKEN` value. Check for typos, quoting, or trailing whitespace.
+- **`absent`** — no `Authorization` header reached the server. The client isn't
+  sending it, or a reverse proxy/ingress stripped it before it arrived.
+- **`<empty token>`** — the client sent `Authorization: Bearer ` with no value,
+  typically an unset `${...}` variable in the client config.
+- **`matches_configured=True -> 200`** — the gate is fine; the problem is
+  elsewhere.
 
 ## Docker Hub images
 

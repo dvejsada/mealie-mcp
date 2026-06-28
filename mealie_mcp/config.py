@@ -61,6 +61,12 @@ class Settings:
 
     log_level: str = "info"
 
+    # When True, log a masked diagnostic for every request reaching the auth gate
+    # (whether an Authorization header arrived, its scheme, the token length and a
+    # non-reversible fingerprint vs. the configured tokens). Off by default; turn
+    # on with MCP_AUTH_DEBUG=true to troubleshoot 401s without leaking secrets.
+    auth_debug: bool = False
+
     @classmethod
     def from_env(cls) -> Settings:
         tokens = _split_tokens(os.getenv("MCP_AUTH_TOKEN"))
@@ -85,4 +91,5 @@ class Settings:
             verify_ssl=_env_bool("MEALIE_VERIFY_SSL", True),
             read_only=_env_bool("MEALIE_READONLY", True),
             log_level=os.getenv("MCP_LOG_LEVEL", "info"),
+            auth_debug=_env_bool("MCP_AUTH_DEBUG", False),
         )
