@@ -86,6 +86,13 @@ async with Client(transport) as client:
     result = await client.call_tool("search_recipes", {"search": "soup"})
 ```
 
+### LibreChat
+
+See [`examples/librechat.yaml`](examples/librechat.yaml) for a ready-to-use
+`mcpServers` entry. It maps the endpoint bearer token to a LibreChat environment
+variable and each user's Mealie token to a per-user `customUserVars` field, so
+every LibreChat user acts as their own Mealie account.
+
 ## Configuration
 
 | Variable | Required | Default | Description |

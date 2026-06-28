@@ -1,0 +1,67 @@
+# Example LibreChat configuration for the Mealie MCP server.
+# ---------------------------------------------------------------------------
+# Copy the `mealie:` entry under `mcpServers:` into your own librechat.yaml.
+# Docs: https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/mcp_servers
+#
+# This server needs TWO credentials, which map onto LibreChat as follows:
+#   1. The endpoint bearer token (your server's MCP_AUTH_TOKEN) — shared by all
+#      users, so it comes from a LibreChat *environment variable*  ${...}
+#   2. Each user's personal Mealie API token — different per user, so it is a
+#      *custom user variable* {{...}} that each user fills in from the LibreChat
+#      UI (Settings -> ... -> the "mealie" MCP server).
+#
+# Set these in LibreChat's environment (e.g. its .env / docker-compose):
+#   MEALIE_MCP_URL=https://mealie-mcp.example.com/mcp   # note the /mcp path
+#   MEALIE_MCP_BEARER=<the same value you set as MCP_AUTH_TOKEN on the server>
+# ---------------------------------------------------------------------------
+
+# Match this to the config version your LibreChat release expects.
+version: 1.2.8
+
+cache: true
+
+mcpServers:
+  mealie:
+    type: streamable-http
+    url: "${MEALIE_MCP_URL}"            # or hard-code: https://mealie-mcp.example.com/mcp
+    headers:
+      # Static gate to reach the server — same for every user.
+      Authorization: "Bearer ${MEALIE_MCP_BEARER}"
+      # Per-user Mealie token, forwarded to Mealie. Each user supplies their own.
+      X-Mealie-Token: "{{MEALIE_API_TOKEN}}"
+      # Optional: point a user at a specific Mealie instance (overrides the
+      # server's MEALIE_BASE_URL). Usually unnecessary — leave commented out.
+      # X-Mealie-Url: "{{MEALIE_URL}}"
+
+    # Values each user enters in the LibreChat UI (kept private to that user).
+    customUserVars:
+      MEALIE_API_TOKEN:
+        title: "Mealie API Token"
+        description: "Your personal Mealie API token (Mealie -> Profile -> Manage API Tokens)."
+        sensitive: true
+      # MEALIE_URL:
+      #   title: "Mealie URL"
+      #   description: "Override the Mealie instance URL for your account (optional)."
+
+    # Surface the server's built-in usage instructions to the agent.
+    serverInstructions: true
+    # Show in the chat tools dropdown.
+    chatMenu: true
+    # Streamable-HTTP request / init timeouts (milliseconds).
+    timeout: 60000
+    initTimeout: 15000
+
+# ---------------------------------------------------------------------------
+# Single-user / shared-token alternative
+# ---------------------------------------------------------------------------
+# If everyone should act as the SAME Mealie user, drop `customUserVars` and read
+# the Mealie token from an environment variable instead of a per-user value:
+#
+#   mcpServers:
+#     mealie:
+#       type: streamable-http
+#       url: "${MEALIE_MCP_URL}"
+#       headers:
+#         Authorization: "Bearer ${MEALIE_MCP_BEARER}"
+#         X-Mealie-Token: "${MEALIE_API_TOKEN}"   # ${...} = server env var, shared
+#       serverInstructions: true

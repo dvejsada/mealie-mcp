@@ -12,6 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `add_shopping_item`, `set_shopping_item_checked`, `add_recipe_to_shopping_list`,
   `create_mealplan_entry`, `delete_mealplan_entry`.
 - `MEALIE_READONLY` configuration flag (defaults to `true`).
+- `examples/librechat.yaml` — example LibreChat `mcpServers` configuration.
 - Test suite (pytest + respx), `ruff` and `pyright` configuration, and a CI workflow.
 - `LICENSE` (MIT), `CONTRIBUTING.md`, Dependabot configuration.
 
