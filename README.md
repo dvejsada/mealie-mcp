@@ -93,6 +93,13 @@ See [`examples/librechat.yaml`](examples/librechat.yaml) for a ready-to-use
 variable and each user's Mealie token to a per-user `customUserVars` field, so
 every LibreChat user acts as their own Mealie account.
 
+> **Set `requiresOAuth: false`** on the server entry. This server uses a static
+> Authorization Bearer gate, not OAuth. Without the flag, LibreChat's OAuth
+> auto-detection probes the endpoint *without* your headers, gets a `401`, and
+> misclassifies the server as OAuth-protected — so it never sends your token
+> (you'll see `401`s followed by `/.well-known/oauth-*` `404`s). See
+> [Troubleshooting](#troubleshooting-401-unauthorized).
+
 ## Configuration
 
 | Variable | Required | Default | Description |
@@ -135,7 +142,9 @@ Read it as:
 - **`matches_configured=False`** — the client sent a token, but it doesn't equal
   any `MCP_AUTH_TOKEN` value. Check for typos, quoting, or trailing whitespace.
 - **`absent`** — no `Authorization` header reached the server. The client isn't
-  sending it, or a reverse proxy/ingress stripped it before it arrived.
+  sending it, or a reverse proxy/ingress stripped it before it arrived. With
+  **LibreChat** this is usually OAuth auto-detection probing without your
+  headers — set `requiresOAuth: false` on the server entry (see above).
 - **`<empty token>`** — the client sent `Authorization: Bearer ` with no value,
   typically an unset `${...}` variable in the client config.
 - **`matches_configured=True -> 200`** — the gate is fine; the problem is
