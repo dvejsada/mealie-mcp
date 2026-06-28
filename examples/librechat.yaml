@@ -24,6 +24,13 @@ mcpServers:
   mealie:
     type: streamable-http
     url: "${MEALIE_MCP_URL}"            # or hard-code: https://mealie-mcp.example.com/mcp
+    # REQUIRED for this server. It is gated by a static Authorization Bearer
+    # token, not OAuth. Without this flag LibreChat's OAuth auto-detection probes
+    # the endpoint *without* your headers, gets a 401 + 'WWW-Authenticate: Bearer'
+    # challenge, misclassifies the server as OAuth-protected, and never sends the
+    # static token (you'll see 401s followed by /.well-known/oauth-* 404s in the
+    # server logs). Setting this false makes LibreChat send your headers directly.
+    requiresOAuth: false
     headers:
       # Static gate to reach the server — same for every user.
       Authorization: "Bearer ${MEALIE_MCP_BEARER}"
@@ -61,6 +68,7 @@ mcpServers:
 #     mealie:
 #       type: streamable-http
 #       url: "${MEALIE_MCP_URL}"
+#       requiresOAuth: false                      # static Bearer gate, not OAuth
 #       headers:
 #         Authorization: "Bearer ${MEALIE_MCP_BEARER}"
 #         X-Mealie-Token: "${MEALIE_API_TOKEN}"   # ${...} = server env var, shared

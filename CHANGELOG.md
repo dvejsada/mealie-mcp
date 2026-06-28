@@ -17,6 +17,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   token is forwarded to Mealie rather than dropped.
 
 ### Added
+- `examples/librechat.yaml` now sets `requiresOAuth: false` (required): LibreChat's
+  OAuth auto-detection otherwise probes this static-token server without the
+  configured headers, gets a `401`, and misclassifies it as OAuth-protected so the
+  static Bearer token is never sent. Documented in the README troubleshooting section.
 - `MCP_AUTH_DEBUG` flag: when enabled, logs a masked diagnostic for every request
   reaching the auth gate (Authorization present/absent, scheme, token length and a
   SHA-256 fingerprint vs. the configured tokens) to troubleshoot `401`s without
