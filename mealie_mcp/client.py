@@ -79,7 +79,7 @@ def _resolve_request() -> tuple[str, str]:
             f"'{MEALIE_TOKEN_HEADER}' header."
         )
 
-    base_url = headers.get(MEALIE_URL_HEADER)
+    base_url = (headers.get(MEALIE_URL_HEADER) or "").strip()
     if base_url:
         base_url = base_url.rstrip("/")
     elif _settings and _settings.mealie_base_url:

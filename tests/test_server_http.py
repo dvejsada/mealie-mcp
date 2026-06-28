@@ -70,6 +70,10 @@ async def http_client(
     settings = Settings(auth_tokens=[GATE_TOKEN], mealie_base_url=MEALIE_BASE)
     app = build_server(settings).http_app()
 
+    # NOTE: `app.router.lifespan_context` and `StreamableHttpTransport`'s
+    # `httpx_client_factory` are FastMCP/Starlette internals rather than
+    # documented public API. They are stable for the pinned `fastmcp==3.4.2`
+    # (see pyproject.toml); revisit these two lines when bumping that pin.
     def factory(headers=None, timeout=None, auth=None, **_kwargs):
         return httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
@@ -130,3 +134,17 @@ async def test_missing_mealie_token_surfaces_tool_error():
             with pytest.raises(BaseException) as excinfo:
                 await client.call_tool("get_app_info", {})
     assert "Missing Mealie credential" in _all_messages(excinfo.value)
+
+
+async def test_whitespace_mealie_token_treated_as_missing():
+    """A whitespace-only X-Mealie-Token is treated as missing — no Mealie call."""
+    with respx.mock(assert_all_called=False) as router:
+        router.route(host=MCP_HOST).pass_through()
+        mealie = router.get(f"{MEALIE_BASE}/api/app/about").mock(
+            return_value=httpx.Response(200, json={"version": "9.9.9"})
+        )
+        async with http_client(mealie_token="   ") as client:
+            with pytest.raises(BaseException) as excinfo:
+                await client.call_tool("get_app_info", {})
+    assert "Missing Mealie credential" in _all_messages(excinfo.value)
+    assert not mealie.called
