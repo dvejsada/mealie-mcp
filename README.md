@@ -90,3 +90,39 @@ async with Client(transport) as client:
 | `MCP_LOG_LEVEL` | no | `info` | uvicorn log level. |
 
 ¹ Required unless every client sends the `X-Mealie-Url` header.
+
+## Docker Hub images
+
+Released versions are published to Docker Hub at
+[`georgx22/mealie-mcp`](https://hub.docker.com/r/georgx22/mealie-mcp)
+(multi-arch: `linux/amd64`, `linux/arm64`):
+
+```bash
+docker run -d -p 8000:8000 \
+  -e MCP_AUTH_TOKEN="a-long-random-secret" \
+  -e MEALIE_BASE_URL="https://mealie.example.com" \
+  georgx22/mealie-mcp:latest
+```
+
+## CI/CD
+
+Two GitHub Actions workflows are included (`.github/workflows/`):
+
+- **`docker-publish.yml`** — builds and pushes the multi-arch image to Docker Hub
+  when a GitHub Release is published (tags `X.Y.Z`, `X.Y`, `X`, and `latest`).
+- **`claude.yml`** — runs [Claude Code](https://github.com/anthropics/claude-code-action)
+  when someone mentions `@claude` in an issue, PR, or review comment.
+
+Configure these repository secrets (**Settings → Secrets and variables → Actions**):
+
+| Secret | Used by | How to get it |
+| --- | --- | --- |
+| `DOCKERHUB_USERNAME` | docker-publish | Your Docker Hub username (with push access to `georgx22/mealie-mcp`). |
+| `DOCKERHUB_TOKEN` | docker-publish | A Docker Hub **access token** (Account Settings → Security → New Access Token). |
+| `CLAUDE_CODE_OAUTH_TOKEN` | claude | Run `claude setup-token` locally (Claude Pro/Max), paste the token. |
+
+To cut a release (which triggers the image build):
+
+```bash
+gh release create v0.1.0 --generate-notes
+```
