@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-28
+
 ### Fixed
 - Read per-request credentials directly off the HTTP request instead of routing
   through FastMCP's `get_http_headers()`, which strips the `authorization`
