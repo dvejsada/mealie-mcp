@@ -218,3 +218,47 @@ async def test_mark_recipe_made_resolves_id_and_puts(configured):
     assert route.called
     body = json.loads(route.calls.last.request.content)
     assert body == {"timestamp": "2026-06-29T12:00:00+00:00"}
+
+
+async def test_mark_recipe_made_errors_when_recipe_has_no_id(configured):
+    with respx.mock:
+        respx.get(f"{BASE_URL}/api/recipes/ghost").mock(
+            return_value=httpx.Response(200, json={"slug": "ghost"})  # no "id"
+        )
+        last_made = respx.put(url__regex=rf"{BASE_URL}/api/recipes/.+/last-made").mock(
+            return_value=httpx.Response(200, json={})
+        )
+        async with Client(_server(read_only=False)) as c:
+            with pytest.raises(Exception) as excinfo:
+                await c.call_tool("mark_recipe_made", {"slug": "ghost"})
+
+    assert "did not return an ID" in str(excinfo.value)
+    assert not last_made.called  # never PUTs to /api/recipes/None/last-made
+
+
+async def test_add_shopping_item_prefers_exact_name_match(configured):
+    with respx.mock:
+        # The leading result has no id and is not an exact match; the exact
+        # match ("beans") carries the id and must be the one chosen.
+        respx.get(f"{BASE_URL}/api/foods").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {"name": "Bean Sprouts"},
+                        {"id": "food-2", "name": "Beans"},
+                    ]
+                },
+            )
+        )
+        route = respx.post(f"{BASE_URL}/api/households/shopping/items").mock(
+            return_value=httpx.Response(201, json={"id": "item-1"})
+        )
+        async with Client(_server(read_only=False)) as c:
+            await c.call_tool(
+                "add_shopping_item",
+                {"shopping_list_id": "L1", "note": "beans", "food": "beans"},
+            )
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["foodId"] == "food-2"

@@ -10,6 +10,7 @@ demand.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -105,14 +106,21 @@ async def _resolve_to_id(value: str, endpoint: str) -> str:
     if not items:
         raise ToolError(f"No match found for '{value}' via {endpoint}.")
     for item in items:
-        if (item.get("name") or "").strip().lower() == value.lower():
+        if (item.get("name") or "").strip().lower() == value.lower() and item.get("id"):
             return item["id"]
-    return items[0]["id"]
+    first_id = items[0].get("id")
+    if not first_id:
+        raise ToolError(f"Match for '{value}' via {endpoint} had no usable ID.")
+    return first_id
 
 
 async def _resolve_many(values: list[str], endpoint: str) -> list[str]:
-    """Resolve a list of names/IDs to IDs against a single search endpoint."""
-    return [await _resolve_to_id(v, endpoint) for v in values]
+    """Resolve a list of names/IDs to IDs against a single search endpoint.
+
+    Lookups run concurrently — for several foods/tools this is one round-trip's
+    worth of latency rather than one per value.
+    """
+    return list(await asyncio.gather(*(_resolve_to_id(v, endpoint) for v in values)))
 
 
 def _trim_ingredient(ingredient: dict[str, Any]) -> dict[str, Any]:
@@ -523,7 +531,9 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
         # The last-made endpoint keys off the recipe UUID, not the slug, so
         # resolve via the recipe first (the GET accepts a slug or an ID).
         recipe = await mealie_get(f"/api/recipes/{slug}")
-        recipe_id = recipe.get("id")
+        recipe_id = recipe.get("id") if isinstance(recipe, dict) else None
+        if not recipe_id:
+            raise ToolError(f"Recipe '{slug}' did not return an ID; cannot mark it made.")
         return await mealie_put(
             f"/api/recipes/{recipe_id}/last-made", json={"timestamp": ts}
         )
@@ -570,12 +580,21 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
     ) -> Any:
         """Add multiple items to a shopping list in a single call. Prefer this
         over repeated add_shopping_item calls whenever adding more than one item."""
-        bodies = [
-            await _build_shopping_item(
-                shopping_list_id, it.note, it.quantity, it.food, it.unit, it.label
+        bodies = list(
+            await asyncio.gather(
+                *(
+                    _build_shopping_item(
+                        shopping_list_id,
+                        it.note,
+                        it.quantity,
+                        it.food,
+                        it.unit,
+                        it.label,
+                    )
+                    for it in items
+                )
             )
-            for it in items
-        ]
+        )
         return await mealie_post(
             "/api/households/shopping/items/create-bulk", json=bodies
         )
