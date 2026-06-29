@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from mealie_mcp.client import _clean_params
-from mealie_mcp.tools import _paginated, _summarize_recipe
+from mealie_mcp.tools import _paginated, _summarize_recipe, _trim_recipe
 
 
 def test_clean_params_drops_none_and_empty_lists():
@@ -49,3 +49,48 @@ def test_paginated_passes_through_and_overrides_items():
     assert out["items"] == ["x"]
     assert out["total"] == 2
     assert _paginated(data)["items"] == [1, 2]
+
+
+def test_trim_recipe_keeps_content_and_drops_bookkeeping():
+    full = {
+        "id": "r1",
+        "slug": "soup",
+        "name": "Soup",
+        "settings": {"showNutrition": True},
+        "assets": [{"name": "pic"}],
+        "comments": [{"text": "yum"}],
+        "userId": "u1",
+        "recipeIngredient": [
+            {"quantity": 2, "unit": {"name": "cup"}, "food": {"name": "stock"},
+             "display": "2 cups stock", "referenceId": "ref"}
+        ],
+        "recipeInstructions": [{"id": "i1", "text": "simmer"}],
+        "tags": [{"name": "easy"}],
+        "recipeCategory": [{"name": "Dinner"}],
+        "tools": [{"name": "Pot"}],
+    }
+    trimmed = _trim_recipe(full)
+
+    # Content preserved, reduced to readable shapes.
+    assert trimmed["recipeIngredient"] == [
+        {"quantity": 2, "unit": "cup", "food": "stock", "note": None,
+         "display": "2 cups stock", "title": None}
+    ]
+    assert trimmed["recipeInstructions"] == [{"title": None, "text": "simmer"}]
+    assert trimmed["tags"] == ["easy"]
+    assert trimmed["categories"] == ["Dinner"]
+    assert trimmed["tools"] == ["Pot"]
+
+    # Bookkeeping dropped.
+    for noise in ("settings", "assets", "comments", "userId"):
+        assert noise not in trimmed
+
+
+def test_trim_recipe_handles_missing_and_null_fields():
+    trimmed = _trim_recipe({"recipeIngredient": [{}], "recipeInstructions": None})
+    assert trimmed["recipeIngredient"] == [
+        {"quantity": None, "unit": None, "food": None, "note": None,
+         "display": None, "title": None}
+    ]
+    assert trimmed["recipeInstructions"] == []
+    assert trimmed["tags"] == []

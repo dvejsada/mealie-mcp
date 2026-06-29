@@ -25,18 +25,29 @@ from .config import MEALIE_TOKEN_HEADER, Settings
 
 logger = logging.getLogger("mealie_mcp.auth")
 
-INSTRUCTIONS = f"""\
-Read-only access to a Mealie recipe and meal-planning instance.
+def _instructions(read_only: bool) -> str:
+    """Server instructions, worded to match the actual read/write mode."""
+    access = "Read-only access" if read_only else "Read and write access"
+    writes = (
+        "Write tools (create/update/delete) are not enabled on this server."
+        if read_only
+        else (
+            "Write tools (create/update/delete) are enabled; the Mealie token's "
+            "own permissions are still enforced, so a read-only token cannot "
+            "mutate data."
+        )
+    )
+    return f"""\
+{access} to a Mealie recipe and meal-planning instance.
 
 Authentication: every request must include two things —
   1. 'Authorization: Bearer <MCP token>' to reach this server, and
   2. '{MEALIE_TOKEN_HEADER}: <your Mealie API token>' so the server can act as you in Mealie.
 
 Use search_recipes to find recipes and get_recipe for full detail. Reference
-data (categories, tags, tools, foods, units) and household data (shopping lists,
-meal plans, cookbooks) are exposed through their own tools. Write tools
-(create/update/delete) are available only when the server runs with writes
-enabled; the Mealie token's own permissions are always enforced as well.
+data (categories, tags, tools, foods, units, labels) and household data
+(shopping lists, meal plans, cookbooks) are exposed through their own tools.
+{writes}
 """
 
 
@@ -66,7 +77,7 @@ def build_server(settings: Settings) -> FastMCP:
 
     mcp = FastMCP(
         name="mealie-mcp",
-        instructions=INSTRUCTIONS,
+        instructions=_instructions(settings.read_only),
         version="0.2.0",
         auth=verifier,
         lifespan=lifespan,
