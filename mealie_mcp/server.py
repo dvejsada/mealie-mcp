@@ -78,7 +78,7 @@ def build_server(settings: Settings) -> FastMCP:
     mcp = FastMCP(
         name="mealie-mcp",
         instructions=_instructions(settings.read_only),
-        version="0.2.0",
+        version="0.3.0",
         auth=verifier,
         lifespan=lifespan,
     )

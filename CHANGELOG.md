@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-29
+
 ### Added
 - `get_random_recipe` read tool (`GET /api/recipes/random`) — a single random
   recipe for "what should I cook?" prompts.
@@ -18,10 +20,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pass `true` for the raw Mealie object.
 
 ### Changed
-- `get_recipe_suggestions` (`foods`/`tools`) and `add_shopping_item`
-  (`food`/`unit`/`label`, renamed from `*_id`) now accept a plain **name or a
+- **Breaking (write tools):** `add_shopping_item`'s `food_id`/`unit_id`/`label_id`
+  arguments are renamed to `food`/`unit`/`label`. Along with
+  `get_recipe_suggestions` (`foods`/`tools`), they now accept a plain **name or a
   UUID** — names are resolved server-side, removing the mandatory `list_*`
-  pre-call.
+  pre-call. Multi-value resolution runs concurrently.
 - `search_recipes.order_by` is now a constrained enum
   (`name`/`rating`/`created_at`/`updated_at`/`last_made`) instead of free text,
   so a mistyped field can no longer cause a `422`.
@@ -31,7 +34,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - `mark_recipe_made` now sends `PUT …/{recipe_id}/last-made` against the recipe's
   UUID (resolved from the slug), matching the current Mealie API. It previously
-  sent `PATCH …/{slug}/last-made`, which the current API does not expose.
+  sent `PATCH …/{slug}/last-made`, which the current API does not expose. It also
+  raises a clear error if the recipe cannot be resolved to an ID.
+- Name resolution no longer raises an opaque `KeyError` on a malformed API item
+  without an `id`; it surfaces a clear tool error and prefers an exact
+  (case-insensitive) name match.
 
 ## [0.2.0] - 2026-06-28
 
