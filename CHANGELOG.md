@@ -6,6 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `get_random_recipe` read tool (`GET /api/recipes/random`) — a single random
+  recipe for "what should I cook?" prompts.
+- `list_labels` read tool (`GET /api/groups/labels`) — discover shopping labels,
+  which `add_shopping_item`/`add_shopping_items` accept by name or ID.
+- `add_shopping_items` write tool (`POST …/shopping/items/create-bulk`) — add
+  several shopping-list items in one call instead of one tool call per item.
+- `get_recipe` now accepts `include_internal` (default `false`): the trimmed view
+  drops `settings`, `assets`, `comments`, owning IDs and per-ingredient UUIDs;
+  pass `true` for the raw Mealie object.
+
+### Changed
+- `get_recipe_suggestions` (`foods`/`tools`) and `add_shopping_item`
+  (`food`/`unit`/`label`, renamed from `*_id`) now accept a plain **name or a
+  UUID** — names are resolved server-side, removing the mandatory `list_*`
+  pre-call.
+- `search_recipes.order_by` is now a constrained enum
+  (`name`/`rating`/`created_at`/`updated_at`/`last_made`) instead of free text,
+  so a mistyped field can no longer cause a `422`.
+- Server `instructions` now reflect the actual read/write mode instead of always
+  claiming "read-only".
+
+### Fixed
+- `mark_recipe_made` now sends `PUT …/{recipe_id}/last-made` against the recipe's
+  UUID (resolved from the slug), matching the current Mealie API. It previously
+  sent `PATCH …/{slug}/last-made`, which the current API does not expose.
+
 ## [0.2.0] - 2026-06-28
 
 ### Fixed

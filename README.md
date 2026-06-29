@@ -26,19 +26,26 @@ Get a Mealie API token from your Mealie profile: **Profile → Manage API Tokens
 
 ### Read tools (always available)
 
-**Recipes** — `search_recipes`, `get_recipe`, `get_recipe_suggestions`
-**Reference data** — `list_categories`, `list_tags`, `list_tools`, `list_foods`, `list_units`, `list_cookbooks`
+**Recipes** — `search_recipes`, `get_recipe`, `get_recipe_suggestions`, `get_random_recipe`
+**Reference data** — `list_categories`, `list_tags`, `list_tools`, `list_foods`, `list_units`, `list_labels`, `list_cookbooks`
 **Household** — `get_shopping_lists`, `get_shopping_list`, `get_meal_plan`, `get_todays_meals`
 **Instance** — `get_current_user`, `get_app_info`
 
 ### Write tools (only when `MEALIE_READONLY=false`)
 
 **Recipes** — `create_recipe_from_url`, `create_recipe`, `update_recipe`, `delete_recipe`, `mark_recipe_made`
-**Shopping** — `add_shopping_item`, `set_shopping_item_checked`, `add_recipe_to_shopping_list`
+**Shopping** — `add_shopping_item`, `add_shopping_items`, `set_shopping_item_checked`, `add_recipe_to_shopping_list`
 **Meal plans** — `create_mealplan_entry`, `delete_mealplan_entry`
 
 > Write tools respect the per-request Mealie token's own permissions, so a
 > read-only Mealie token can never mutate data even when write tools are enabled.
+
+> **Names, not just IDs.** Tools that take a food, unit, or label (e.g.
+> `get_recipe_suggestions`, `add_shopping_item`, `add_shopping_items`) accept a
+> plain name *or* a UUID — names are resolved server-side, so a client doesn't
+> need a separate `list_*` lookup first. `get_recipe` returns a trimmed view by
+> default (pass `include_internal=true` for the raw Mealie object), and
+> `add_shopping_items` adds many items in one call.
 
 ## Run with Docker
 

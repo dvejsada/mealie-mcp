@@ -10,11 +10,13 @@ demand.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
-from pydantic import Field
+from fastmcp.exceptions import ToolError
+from pydantic import BaseModel, Field
 
 from .client import (
     mealie_delete,
@@ -32,6 +34,30 @@ OrderDirection = Annotated[
     Literal["asc", "desc"],
     Field(description="Sort direction for the result set."),
 ]
+RecipeOrderBy = Annotated[
+    Literal["name", "rating", "created_at", "updated_at", "last_made"] | None,
+    Field(description="Field to sort recipes by; omit for Mealie's default order."),
+]
+
+# A name passed to a filter/lookup that already looks like this is treated as an
+# ID and passed straight through; anything else is resolved via a search query.
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+class ShoppingItemInput(BaseModel):
+    """One item for ``add_shopping_items``.
+
+    ``food``/``unit``/``label`` accept a human name or a UUID; names are resolved
+    to IDs server-side so callers never need a prior lookup call.
+    """
+
+    note: str
+    quantity: float = 1
+    food: str | None = None
+    unit: str | None = None
+    label: str | None = None
 
 
 def _summarize_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
@@ -60,6 +86,112 @@ def _paginated(data: dict[str, Any], items: list[Any] | None = None) -> dict[str
         "per_page": data.get("per_page"),
         "total": data.get("total"),
         "total_pages": data.get("total_pages"),
+    }
+
+
+async def _resolve_to_id(value: str, endpoint: str) -> str:
+    """Resolve a human name to an entity ID, or pass a UUID straight through.
+
+    Looks the name up via the endpoint's ``search`` query and prefers an exact
+    (case-insensitive) name match, falling back to the first result. Raises a
+    ToolError when nothing matches, so the caller gets an actionable message
+    instead of a silently empty filter.
+    """
+    value = value.strip()
+    if _UUID_RE.match(value):
+        return value
+    data = await mealie_get(endpoint, params={"search": value, "perPage": 10})
+    items = data.get("items", []) if isinstance(data, dict) else []
+    if not items:
+        raise ToolError(f"No match found for '{value}' via {endpoint}.")
+    for item in items:
+        if (item.get("name") or "").strip().lower() == value.lower():
+            return item["id"]
+    return items[0]["id"]
+
+
+async def _resolve_many(values: list[str], endpoint: str) -> list[str]:
+    """Resolve a list of names/IDs to IDs against a single search endpoint."""
+    return [await _resolve_to_id(v, endpoint) for v in values]
+
+
+def _trim_ingredient(ingredient: dict[str, Any]) -> dict[str, Any]:
+    food = ingredient.get("food") or {}
+    unit = ingredient.get("unit") or {}
+    return {
+        "quantity": ingredient.get("quantity"),
+        "unit": unit.get("name") if isinstance(unit, dict) else unit,
+        "food": food.get("name") if isinstance(food, dict) else food,
+        "note": ingredient.get("note"),
+        "display": ingredient.get("display"),
+        "title": ingredient.get("title"),
+    }
+
+
+def _trim_instruction(step: dict[str, Any]) -> dict[str, Any]:
+    return {"title": step.get("title"), "text": step.get("text")}
+
+
+def _trim_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
+    """Full recipe detail minus internal bookkeeping.
+
+    Keeps everything needed to read/cook a recipe (ingredients, instructions,
+    nutrition, notes, organizers) and drops noise that bloats the response:
+    ``settings``, ``assets``, ``comments``, image hashes, owning IDs and the
+    per-ingredient/instruction UUIDs.
+    """
+    return {
+        "id": recipe.get("id"),
+        "slug": recipe.get("slug"),
+        "name": recipe.get("name"),
+        "description": recipe.get("description"),
+        "orgURL": recipe.get("orgURL"),
+        "rating": recipe.get("rating"),
+        "recipeServings": recipe.get("recipeServings"),
+        "recipeYield": recipe.get("recipeYield"),
+        "recipeYieldQuantity": recipe.get("recipeYieldQuantity"),
+        "totalTime": recipe.get("totalTime"),
+        "prepTime": recipe.get("prepTime"),
+        "performTime": recipe.get("performTime"),
+        "cookTime": recipe.get("cookTime"),
+        "recipeIngredient": [
+            _trim_ingredient(i) for i in (recipe.get("recipeIngredient") or [])
+        ],
+        "recipeInstructions": [
+            _trim_instruction(s) for s in (recipe.get("recipeInstructions") or [])
+        ],
+        "nutrition": recipe.get("nutrition"),
+        "notes": recipe.get("notes"),
+        "tags": [t.get("name") for t in (recipe.get("tags") or [])],
+        "categories": [c.get("name") for c in (recipe.get("recipeCategory") or [])],
+        "tools": [t.get("name") for t in (recipe.get("tools") or [])],
+        "extras": recipe.get("extras"),
+        "dateAdded": recipe.get("dateAdded"),
+        "lastMade": recipe.get("lastMade"),
+    }
+
+
+async def _build_shopping_item(
+    shopping_list_id: str,
+    note: str,
+    quantity: float,
+    food: str | None,
+    unit: str | None,
+    label: str | None,
+) -> dict[str, Any]:
+    """Resolve name-or-ID fields and build a Mealie shopping-item create body."""
+    food_id = await _resolve_to_id(food, "/api/foods") if food else None
+    unit_id = await _resolve_to_id(unit, "/api/units") if unit else None
+    label_id = await _resolve_to_id(label, "/api/groups/labels") if label else None
+    return {
+        "shoppingListId": shopping_list_id,
+        "note": note,
+        "quantity": quantity,
+        "foodId": food_id,
+        "unitId": unit_id,
+        "labelId": label_id,
+        "isFood": food_id is not None,
+        "checked": False,
     }
 
 
@@ -92,10 +224,7 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
         ] = None,
         require_all_categories: bool = False,
         require_all_tags: bool = False,
-        order_by: Annotated[
-            str | None,
-            Field(description="Field to sort by, e.g. 'name', 'rating', 'created_at'."),
-        ] = None,
+        order_by: RecipeOrderBy = None,
         order_direction: OrderDirection = "desc",
         page: Page = 1,
         per_page: PerPage = 50,
@@ -127,20 +256,32 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
             str,
             Field(description="Recipe slug (e.g. 'spaghetti-bolognese') or recipe ID."),
         ],
+        include_internal: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Return the raw Mealie object (settings, assets, comments, "
+                    "owning IDs) instead of the trimmed view. Use before "
+                    "update_recipe if you need the exact schema."
+                )
+            ),
+        ] = False,
     ) -> dict[str, Any]:
-        """Get the full details of a single recipe by its slug or ID, including
-        ingredients, instructions, nutrition, tags and categories."""
-        return await mealie_get(f"/api/recipes/{slug}")
+        """Get a single recipe by its slug or ID: ingredients, instructions,
+        nutrition, notes, tags and categories. Trimmed of internal bookkeeping by
+        default; pass include_internal=True for the raw object."""
+        recipe = await mealie_get(f"/api/recipes/{slug}")
+        return recipe if include_internal else _trim_recipe(recipe)
 
     @mcp.tool
     async def get_recipe_suggestions(
         foods: Annotated[
             list[str] | None,
-            Field(description="Food IDs (UUIDs) you have on hand; see list_foods."),
+            Field(description="Food names or IDs you have on hand (names resolved for you)."),
         ] = None,
         tools: Annotated[
             list[str] | None,
-            Field(description="Tool IDs (UUIDs) you have on hand; see list_tools."),
+            Field(description="Tool names or IDs you have on hand (names resolved for you)."),
         ] = None,
         limit: Annotated[int, Field(ge=1, le=100, description="Max suggestions.")] = 10,
         max_missing_foods: Annotated[
@@ -150,17 +291,30 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
             int, Field(ge=0, description="Allowed number of missing tools.")
         ] = 5,
     ) -> dict[str, Any]:
-        """Suggest recipes you can make from the foods and tools you have on hand."""
+        """Suggest recipes you can make from the foods and tools you have on hand.
+        Food/tool names are resolved to IDs for you, so plain names work — no
+        need to call list_foods/list_tools first."""
+        food_ids = await _resolve_many(foods, "/api/foods") if foods else None
+        tool_ids = (
+            await _resolve_many(tools, "/api/organizers/tools") if tools else None
+        )
         return await mealie_get(
             "/api/recipes/suggestions",
             params={
-                "foods": foods,
-                "tools": tools,
+                "foods": food_ids,
+                "tools": tool_ids,
                 "limit": limit,
                 "maxMissingFoods": max_missing_foods,
                 "maxMissingTools": max_missing_tools,
             },
         )
+
+    @mcp.tool
+    async def get_random_recipe() -> dict[str, Any]:
+        """Get a single random recipe — handy for "what should I cook tonight?".
+        Returns the same trimmed detail as get_recipe."""
+        recipe = await mealie_get("/api/recipes/random")
+        return _trim_recipe(recipe)
 
     # --- Organizers & reference data ------------------------------------------
 
@@ -222,6 +376,17 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
         return await mealie_get(
             "/api/households/cookbooks",
             params={"page": page, "perPage": per_page},
+        )
+
+    @mcp.tool
+    async def list_labels(
+        search: str | None = None, page: Page = 1, per_page: PerPage = 100
+    ) -> dict[str, Any]:
+        """List shopping labels (id, name, color) used to group shopping-list
+        items by aisle/section. Needed to set a label on a shopping item."""
+        return await mealie_get(
+            "/api/groups/labels",
+            params={"search": search, "page": page, "perPage": per_page},
         )
 
     # --- Shopping lists --------------------------------------------------------
@@ -346,15 +511,22 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
 
     @mcp.tool
     async def mark_recipe_made(
-        slug: Annotated[str, Field(description="Slug of the recipe.")],
+        slug: Annotated[str, Field(description="Slug or ID of the recipe.")],
         timestamp: Annotated[
             str | None,
             Field(description="ISO 8601 datetime; defaults to now (UTC)."),
         ] = None,
     ) -> dict[str, Any]:
-        """Record that a recipe was made, updating its 'last made' date."""
+        """Record that a recipe was made, updating its 'last made' date and
+        adding a timeline event."""
         ts = timestamp or datetime.now(UTC).isoformat()
-        return await mealie_patch(f"/api/recipes/{slug}/last-made", json={"timestamp": ts})
+        # The last-made endpoint keys off the recipe UUID, not the slug, so
+        # resolve via the recipe first (the GET accepts a slug or an ID).
+        recipe = await mealie_get(f"/api/recipes/{slug}")
+        recipe_id = recipe.get("id")
+        return await mealie_put(
+            f"/api/recipes/{recipe_id}/last-made", json={"timestamp": ts}
+        )
 
     # --- Shopping lists --------------------------------------------------------
 
@@ -363,23 +535,49 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
         shopping_list_id: Annotated[str, Field(description="Target shopping list ID (UUID).")],
         note: Annotated[str, Field(description="Free-text item, e.g. '2 cans of beans'.")],
         quantity: Annotated[float, Field(ge=0, description="Quantity.")] = 1,
-        food_id: Annotated[str | None, Field(description="Optional food ID (UUID).")] = None,
-        unit_id: Annotated[str | None, Field(description="Optional unit ID (UUID).")] = None,
-        label_id: Annotated[str | None, Field(description="Optional label ID (UUID).")] = None,
+        food: Annotated[
+            str | None,
+            Field(description="Optional food name or ID (resolved for you)."),
+        ] = None,
+        unit: Annotated[
+            str | None,
+            Field(description="Optional unit name or ID (resolved for you)."),
+        ] = None,
+        label: Annotated[
+            str | None,
+            Field(description="Optional label name or ID (resolved for you); see list_labels."),
+        ] = None,
     ) -> dict[str, Any]:
-        """Add an item to a shopping list."""
+        """Add a single item to a shopping list. To add several at once, use
+        add_shopping_items instead (one call rather than many)."""
+        body = await _build_shopping_item(
+            shopping_list_id, note, quantity, food, unit, label
+        )
+        return await mealie_post("/api/households/shopping/items", json=body)
+
+    @mcp.tool
+    async def add_shopping_items(
+        shopping_list_id: Annotated[str, Field(description="Target shopping list ID (UUID).")],
+        items: Annotated[
+            list[ShoppingItemInput],
+            Field(
+                description=(
+                    "Items to add in one call. Each has note (required) plus "
+                    "optional quantity, food, unit, label."
+                )
+            ),
+        ],
+    ) -> Any:
+        """Add multiple items to a shopping list in a single call. Prefer this
+        over repeated add_shopping_item calls whenever adding more than one item."""
+        bodies = [
+            await _build_shopping_item(
+                shopping_list_id, it.note, it.quantity, it.food, it.unit, it.label
+            )
+            for it in items
+        ]
         return await mealie_post(
-            "/api/households/shopping/items",
-            json={
-                "shoppingListId": shopping_list_id,
-                "note": note,
-                "quantity": quantity,
-                "foodId": food_id,
-                "unitId": unit_id,
-                "labelId": label_id,
-                "isFood": food_id is not None,
-                "checked": False,
-            },
+            "/api/households/shopping/items/create-bulk", json=bodies
         )
 
     @mcp.tool
