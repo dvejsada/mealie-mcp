@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Breaking (read tools):** the seven per-collection reference tools
+  (`list_categories`, `list_tags`, `list_tools`, `list_foods`, `list_units`,
+  `list_labels`, `list_cookbooks`) are replaced by a single `list_reference`
+  tool that takes a `category` argument. Behaviour is otherwise unchanged;
+  `search` is ignored for `cookbooks` (unsupported upstream).
+
 ## [0.3.0] - 2026-06-29
 
 ### Added

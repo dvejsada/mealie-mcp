@@ -27,7 +27,7 @@ Get a Mealie API token from your Mealie profile: **Profile → Manage API Tokens
 ### Read tools (always available)
 
 **Recipes** — `search_recipes`, `get_recipe`, `get_recipe_suggestions`, `get_random_recipe`
-**Reference data** — `list_categories`, `list_tags`, `list_tools`, `list_foods`, `list_units`, `list_labels`, `list_cookbooks`
+**Reference data** — `list_reference` (one tool; `category`: categories, tags, tools, foods, units, labels, cookbooks)
 **Household** — `get_shopping_lists`, `get_shopping_list`, `get_meal_plan`, `get_todays_meals`
 **Instance** — `get_current_user`, `get_app_info`
 

@@ -20,8 +20,7 @@ from tests.conftest import BASE_URL
 
 READ_TOOLS = {
     "search_recipes", "get_recipe", "get_recipe_suggestions", "get_random_recipe",
-    "list_categories", "list_tags", "list_tools", "list_foods",
-    "list_units", "list_cookbooks", "list_labels", "get_shopping_lists",
+    "list_reference", "get_shopping_lists",
     "get_shopping_list", "get_meal_plan", "get_todays_meals", "get_current_user",
     "get_app_info",
 }
@@ -87,6 +86,35 @@ async def test_search_recipes_returns_trimmed_summaries(configured):
     assert item["tags"] == ["easy"]
     assert item["categories"] == ["Dinner"]
     assert "recipeInstructions" not in item  # trimmed out
+
+
+async def test_list_reference_routes_category_to_endpoint(configured):
+    with respx.mock:
+        route = respx.get(f"{BASE_URL}/api/organizers/tags").mock(
+            return_value=httpx.Response(200, json={"items": [{"id": "t1", "name": "Easy"}]})
+        )
+        async with Client(_server(read_only=True)) as c:
+            result = await c.call_tool(
+                "list_reference", {"category": "tags", "search": "eas"}
+            )
+
+    assert route.called
+    assert dict(route.calls.last.request.url.params)["search"] == "eas"
+    assert result.data["items"][0]["name"] == "Easy"
+
+
+async def test_list_reference_omits_search_for_cookbooks(configured):
+    with respx.mock:
+        route = respx.get(f"{BASE_URL}/api/households/cookbooks").mock(
+            return_value=httpx.Response(200, json={"items": []})
+        )
+        async with Client(_server(read_only=True)) as c:
+            await c.call_tool(
+                "list_reference", {"category": "cookbooks", "search": "ignored"}
+            )
+
+    assert route.called
+    assert "search" not in dict(route.calls.last.request.url.params)
 
 
 async def test_create_recipe_posts_expected_body(configured):

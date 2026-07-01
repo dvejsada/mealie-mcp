@@ -40,6 +40,29 @@ RecipeOrderBy = Annotated[
     Field(description="Field to sort recipes by; omit for Mealie's default order."),
 ]
 
+# Reference/organizer collections exposed through the single ``list_reference``
+# tool. Every endpoint returns Mealie's standard pagination envelope and accepts
+# ``page``/``perPage``; all but ``cookbooks`` also accept a ``search`` query.
+ReferenceCategory = Annotated[
+    Literal["categories", "tags", "tools", "foods", "units", "labels", "cookbooks"],
+    Field(
+        description=(
+            "Which reference collection to list: categories/tags/tools (recipe "
+            "organizers), foods & units (ingredients/measures), labels (shopping "
+            "aisles/sections), cookbooks (saved smart recipe collections)."
+        )
+    ),
+]
+_REFERENCE_ENDPOINTS: dict[str, str] = {
+    "categories": "/api/organizers/categories",
+    "tags": "/api/organizers/tags",
+    "tools": "/api/organizers/tools",
+    "foods": "/api/foods",
+    "units": "/api/units",
+    "labels": "/api/groups/labels",
+    "cookbooks": "/api/households/cookbooks",
+}
+
 # A name passed to a filter/lookup that already looks like this is treated as an
 # ID and passed straight through; anything else is resolved via a search query.
 _UUID_RE = re.compile(
@@ -301,7 +324,7 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
     ) -> dict[str, Any]:
         """Suggest recipes you can make from the foods and tools you have on hand.
         Food/tool names are resolved to IDs for you, so plain names work — no
-        need to call list_foods/list_tools first."""
+        need to call list_reference first."""
         food_ids = await _resolve_many(foods, "/api/foods") if foods else None
         tool_ids = (
             await _resolve_many(tools, "/api/organizers/tools") if tools else None
@@ -327,75 +350,23 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
     # --- Organizers & reference data ------------------------------------------
 
     @mcp.tool
-    async def list_categories(
-        search: str | None = None, page: Page = 1, per_page: PerPage = 100
+    async def list_reference(
+        category: ReferenceCategory,
+        search: Annotated[
+            str | None,
+            Field(description="Name filter; ignored for cookbooks (unsupported)."),
+        ] = None,
+        page: Page = 1,
+        per_page: PerPage = 100,
     ) -> dict[str, Any]:
-        """List recipe categories (id, name, slug)."""
-        return await mealie_get(
-            "/api/organizers/categories",
-            params={"search": search, "page": page, "perPage": per_page},
-        )
-
-    @mcp.tool
-    async def list_tags(
-        search: str | None = None, page: Page = 1, per_page: PerPage = 100
-    ) -> dict[str, Any]:
-        """List recipe tags (id, name, slug)."""
-        return await mealie_get(
-            "/api/organizers/tags",
-            params={"search": search, "page": page, "perPage": per_page},
-        )
-
-    @mcp.tool
-    async def list_tools(
-        search: str | None = None, page: Page = 1, per_page: PerPage = 100
-    ) -> dict[str, Any]:
-        """List kitchen tools used to organise recipes (id, name, slug)."""
-        return await mealie_get(
-            "/api/organizers/tools",
-            params={"search": search, "page": page, "perPage": per_page},
-        )
-
-    @mcp.tool
-    async def list_foods(
-        search: str | None = None, page: Page = 1, per_page: PerPage = 100
-    ) -> dict[str, Any]:
-        """List foods/ingredients defined in Mealie (id, name, plural name)."""
-        return await mealie_get(
-            "/api/foods",
-            params={"search": search, "page": page, "perPage": per_page},
-        )
-
-    @mcp.tool
-    async def list_units(
-        search: str | None = None, page: Page = 1, per_page: PerPage = 100
-    ) -> dict[str, Any]:
-        """List measurement units defined in Mealie (id, name, abbreviation)."""
-        return await mealie_get(
-            "/api/units",
-            params={"search": search, "page": page, "perPage": per_page},
-        )
-
-    @mcp.tool
-    async def list_cookbooks(
-        page: Page = 1, per_page: PerPage = 100
-    ) -> dict[str, Any]:
-        """List cookbooks (saved smart collections of recipes) for the household."""
-        return await mealie_get(
-            "/api/households/cookbooks",
-            params={"page": page, "perPage": per_page},
-        )
-
-    @mcp.tool
-    async def list_labels(
-        search: str | None = None, page: Page = 1, per_page: PerPage = 100
-    ) -> dict[str, Any]:
-        """List shopping labels (id, name, color) used to group shopping-list
-        items by aisle/section. Needed to set a label on a shopping item."""
-        return await mealie_get(
-            "/api/groups/labels",
-            params={"search": search, "page": page, "perPage": per_page},
-        )
+        """List a Mealie reference/organizer collection chosen via ``category``:
+        categories, tags and tools (recipe organizers), foods and units
+        (ingredients/measures), labels (shopping aisles) or cookbooks (saved
+        smart recipe collections). Each item carries at least an id and name."""
+        params: dict[str, Any] = {"page": page, "perPage": per_page}
+        if category != "cookbooks":
+            params["search"] = search
+        return await mealie_get(_REFERENCE_ENDPOINTS[category], params=params)
 
     # --- Shopping lists --------------------------------------------------------
 
@@ -555,7 +526,7 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
         ] = None,
         label: Annotated[
             str | None,
-            Field(description="Optional label name or ID (resolved for you); see list_labels."),
+            Field(description="Optional label name or ID (resolved for you); see list_reference."),
         ] = None,
     ) -> dict[str, Any]:
         """Add a single item to a shopping list. To add several at once, use
