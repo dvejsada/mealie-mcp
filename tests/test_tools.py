@@ -250,6 +250,8 @@ async def test_update_mealplan_entry_merges_current_entry(configured):
                     "title": "",
                     "text": "old note",
                     "recipeId": "rid-old",
+                    # A field only present on the read schema — must survive the PUT.
+                    "recipe": {"id": "rid-old", "name": "Old"},
                 },
             )
         )
@@ -272,6 +274,8 @@ async def test_update_mealplan_entry_merges_current_entry(configured):
     assert body["id"] == 7
     assert body["groupId"] == "g1"
     assert body["userId"] == "u1"
+    # Mutate-in-place preserves fields the tool doesn't touch.
+    assert body["recipe"] == {"id": "rid-old", "name": "Old"}
 
 
 async def test_add_shopping_item_prefers_exact_name_match(configured):

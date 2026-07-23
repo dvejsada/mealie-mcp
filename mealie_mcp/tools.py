@@ -681,20 +681,20 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
         """Update an existing meal plan entry (change its date, meal slot, recipe,
         title or note). Only the supplied fields change; omitted fields keep their
         current value. Mealie requires the whole entry on update, so the current
-        entry is fetched first and merged with your changes."""
+        entry is fetched, the supplied fields are overwritten in place, and the
+        whole object is PUT back (mirroring set_shopping_item_checked)."""
         entry = await mealie_get(f"/api/households/mealplans/{entry_id}")
-        body = {
-            # Mealie's UpdatePlanEntry requires these unchanged identifiers.
-            "id": entry.get("id"),
-            "groupId": entry.get("groupId"),
-            "userId": entry.get("userId"),
-            "date": date if date is not None else entry.get("date"),
-            "entryType": entry_type if entry_type is not None else entry.get("entryType"),
-            "title": title if title is not None else entry.get("title") or "",
-            "text": text if text is not None else entry.get("text") or "",
-            "recipeId": recipe_id if recipe_id is not None else entry.get("recipeId"),
-        }
-        return await mealie_put(f"/api/households/mealplans/{entry_id}", json=body)
+        if date is not None:
+            entry["date"] = date
+        if entry_type is not None:
+            entry["entryType"] = entry_type
+        if recipe_id is not None:
+            entry["recipeId"] = recipe_id
+        if title is not None:
+            entry["title"] = title
+        if text is not None:
+            entry["text"] = text
+        return await mealie_put(f"/api/households/mealplans/{entry_id}", json=entry)
 
     @mcp.tool
     async def delete_mealplan_entry(
