@@ -29,7 +29,7 @@ WRITE_TOOLS = {
     "create_recipe_from_url", "create_recipe", "update_recipe", "delete_recipe",
     "mark_recipe_made", "add_shopping_item", "add_shopping_items",
     "set_shopping_item_checked", "add_recipe_to_shopping_list",
-    "create_mealplan_entry", "delete_mealplan_entry",
+    "create_mealplan_entry", "update_mealplan_entry", "delete_mealplan_entry",
 }
 
 
@@ -234,6 +234,48 @@ async def test_mark_recipe_made_errors_when_recipe_has_no_id(configured):
 
     assert "did not return an ID" in str(excinfo.value)
     assert not last_made.called  # never PUTs to /api/recipes/None/last-made
+
+
+async def test_update_mealplan_entry_merges_current_entry(configured):
+    with respx.mock:
+        respx.get(f"{BASE_URL}/api/households/mealplans/7").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id": 7,
+                    "groupId": "g1",
+                    "userId": "u1",
+                    "date": "2026-07-24",
+                    "entryType": "dinner",
+                    "title": "",
+                    "text": "old note",
+                    "recipeId": "rid-old",
+                    # A field only present on the read schema — must survive the PUT.
+                    "recipe": {"id": "rid-old", "name": "Old"},
+                },
+            )
+        )
+        route = respx.put(f"{BASE_URL}/api/households/mealplans/7").mock(
+            return_value=httpx.Response(200, json={"id": 7})
+        )
+        async with Client(_server(read_only=False)) as c:
+            await c.call_tool(
+                "update_mealplan_entry",
+                {"entry_id": "7", "entry_type": "lunch", "recipe_id": "rid-new"},
+            )
+
+    assert route.called
+    body = json.loads(route.calls.last.request.content)
+    # Changed fields applied; identifiers and untouched fields preserved.
+    assert body["entryType"] == "lunch"
+    assert body["recipeId"] == "rid-new"
+    assert body["date"] == "2026-07-24"
+    assert body["text"] == "old note"
+    assert body["id"] == 7
+    assert body["groupId"] == "g1"
+    assert body["userId"] == "u1"
+    # Mutate-in-place preserves fields the tool doesn't touch.
+    assert body["recipe"] == {"id": "rid-old", "name": "Old"}
 
 
 async def test_add_shopping_item_prefers_exact_name_match(configured):
