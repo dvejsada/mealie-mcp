@@ -35,7 +35,7 @@ Get a Mealie API token from your Mealie profile: **Profile → Manage API Tokens
 
 **Recipes** — `create_recipe_from_url`, `create_recipe`, `update_recipe`, `delete_recipe`, `mark_recipe_made`
 **Shopping** — `add_shopping_item`, `add_shopping_items`, `set_shopping_item_checked`, `add_recipe_to_shopping_list`
-**Meal plans** — `create_mealplan_entry`, `delete_mealplan_entry`
+**Meal plans** — `create_mealplan_entry`, `update_mealplan_entry`, `delete_mealplan_entry`
 
 > Write tools respect the per-request Mealie token's own permissions, so a
 > read-only Mealie token can never mutate data even when write tools are enabled.

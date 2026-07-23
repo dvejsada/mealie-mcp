@@ -39,6 +39,9 @@ RecipeOrderBy = Annotated[
     Literal["name", "rating", "created_at", "updated_at", "last_made"] | None,
     Field(description="Field to sort recipes by; omit for Mealie's default order."),
 ]
+MealEntryType = Literal[
+    "breakfast", "lunch", "dinner", "side", "snack", "drink", "dessert"
+]
 
 # A name passed to a filter/lookup that already looks like this is treated as an
 # ID and passed straight through; anything else is resolved via a search query.
@@ -629,7 +632,7 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
     async def create_mealplan_entry(
         date: Annotated[str, Field(description="Date for the meal, format YYYY-MM-DD.")],
         entry_type: Annotated[
-            Literal["breakfast", "lunch", "dinner", "side", "snack", "drink", "dessert"],
+            MealEntryType,
             Field(description="Meal slot."),
         ] = "dinner",
         recipe_id: Annotated[
@@ -651,6 +654,47 @@ def register(mcp: FastMCP, include_writes: bool = False) -> None:
                 "text": text or "",
             },
         )
+
+    @mcp.tool
+    async def update_mealplan_entry(
+        entry_id: Annotated[str, Field(description="Meal plan entry ID.")],
+        date: Annotated[
+            str | None,
+            Field(description="New date, format YYYY-MM-DD; omit to keep current."),
+        ] = None,
+        entry_type: Annotated[
+            MealEntryType | None,
+            Field(description="New meal slot; omit to keep current."),
+        ] = None,
+        recipe_id: Annotated[
+            str | None,
+            Field(description="New recipe ID (UUID) to plan; omit to keep current."),
+        ] = None,
+        title: Annotated[
+            str | None,
+            Field(description="New title for a free-text entry; omit to keep current."),
+        ] = None,
+        text: Annotated[
+            str | None, Field(description="New note; omit to keep current.")
+        ] = None,
+    ) -> dict[str, Any]:
+        """Update an existing meal plan entry (change its date, meal slot, recipe,
+        title or note). Only the supplied fields change; omitted fields keep their
+        current value. Mealie requires the whole entry on update, so the current
+        entry is fetched first and merged with your changes."""
+        entry = await mealie_get(f"/api/households/mealplans/{entry_id}")
+        body = {
+            # Mealie's UpdatePlanEntry requires these unchanged identifiers.
+            "id": entry.get("id"),
+            "groupId": entry.get("groupId"),
+            "userId": entry.get("userId"),
+            "date": date if date is not None else entry.get("date"),
+            "entryType": entry_type if entry_type is not None else entry.get("entryType"),
+            "title": title if title is not None else entry.get("title") or "",
+            "text": text if text is not None else entry.get("text") or "",
+            "recipeId": recipe_id if recipe_id is not None else entry.get("recipeId"),
+        }
+        return await mealie_put(f"/api/households/mealplans/{entry_id}", json=body)
 
     @mcp.tool
     async def delete_mealplan_entry(
