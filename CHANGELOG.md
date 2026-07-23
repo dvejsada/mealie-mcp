@@ -6,11 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-23
+
 ### Added
 - `update_mealplan_entry` write tool (`PUT …/mealplans/{id}`) — change an existing
   meal plan entry's date, meal slot, recipe, title or note. Only supplied fields
-  change; the current entry is fetched and merged, since Mealie requires the whole
-  entry on update.
+  change; the current entry is fetched, the supplied fields are overwritten in
+  place, and the whole object is PUT back (matching `set_shopping_item_checked`),
+  since Mealie requires the full entry on update.
 
 ## [0.3.0] - 2026-06-29
 
