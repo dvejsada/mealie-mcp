@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 # No .pyc files, unbuffered stdout/stderr for clean container logs.
 ENV PYTHONDONTWRITEBYTECODE=1 \
